@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+
+<head>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#a1c4fd">
+</head>
+
+    
+<meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rusça Kelime Öğrenme</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .word-display {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .russian-word {
+            font-size: 24px;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        .turkish-word {
+            font-size: 20px;
+            color: #34495e;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        #progressBar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        #progress {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 10px;
+            transition: width 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-body text-center">
+                        <h2 class="mb-4">Rusça Kelime Öğrenme</h2>
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="excelFile" accept=".xlsx, .xls">
+                            <small class="text-muted">Excel dosyanızı seçin (A sütunu: Rusça kelimeler, B sütunu: Türkçe anlamları)</small>
+                        </div>
+                        <div class="controls" style="display: none;" id="controlsContainer">
+                            <div class="mb-3">
+                                <label for="repeatCount" class="form-label">Tekrar Sayısı:</label>
+                                <input type="number" class="form-control" id="repeatCount" min="1" value="3">
+                            </div>
+                            <button class="btn btn-primary" onclick="startReading()">Başlat</button>
+                            <button class="btn btn-danger" onclick="stopReading()">Durdur</button>
+                            <div id="progressBar">
+                                <div id="progress"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="word-display" id="wordDisplay" style="display: none;">
+        <div class="russian-word" id="currentRussianWord"></div>
+        <div class="turkish-word" id="currentTurkishWord"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        let words = [];
+        let currentIndex = 0;
+        let isReading = false;
+        let currentRepeatCount = 0;
+        let totalRepeatCount = 0;
+        let speechQueue = [];
+
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: ['russian', 'turkish']});
+                
+                words = jsonData;
+                document.getElementById('controlsContainer').style.display = 'block';
+                document.getElementById('wordDisplay').style.display = 'block';
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+
+        function updateProgress() {
+            const progress = (currentIndex / words.length) * 100;
+            document.getElementById('progress').style.width = progress + '%';
+        }
+
+        function startReading() {
+            if (isReading) return;
+            isReading = true;
+            currentIndex = 0;
+            totalRepeatCount = parseInt(document.getElementById('repeatCount').value);
+            readCurrentWord();
+        }
+
+        function stopReading() {
+            isReading = false;
+            speechSynthesis.cancel();
+            speechQueue = [];
+        }
+
+        function readCurrentWord() {
+            if (!isReading || currentIndex >= words.length) {
+                isReading = false;
+                return;
+            }
+
+            updateProgress();
+            currentRepeatCount = 0;
+            const russianWord = words[currentIndex].russian;
+            const turkishWord = words[currentIndex].turkish;
+
+            document.getElementById('currentRussianWord').textContent = russianWord;
+            document.getElementById('currentTurkishWord').textContent = turkishWord;
+
+            speakWordWithRepeat(russianWord, turkishWord);
+        }
+
+        function speakWordWithRepeat(russianWord, turkishWord) {
+            if (currentRepeatCount >= totalRepeatCount) {
+                currentIndex++;
+                if (currentIndex < words.length && isReading) {
+                    setTimeout(readCurrentWord, 1000);
+                } else {
+                    isReading = false;
+                }
+                return;
+            }
+
+            const russianUtterance = new SpeechSynthesisUtterance(russianWord);
+            russianUtterance.lang = 'ru-RU';
+            
+            const turkishUtterance = new SpeechSynthesisUtterance(turkishWord);
+            turkishUtterance.lang = 'tr-TR';
+
+            russianUtterance.onend = () => {
+                setTimeout(() => {
+                    speechSynthesis.speak(turkishUtterance);
+                }, 500);
+            };
+
+            turkishUtterance.onend = () => {
+                currentRepeatCount++;
+                setTimeout(() => {
+                    if (isReading) {
+                        speakWordWithRepeat(russianWord, turkishWord);
+                    }
+                }, 1000);
+            };
+
+            speechSynthesis.speak(russianUtterance);
+        }
+
+        // Sayfadan ayrılmayı engelle
+        window.onbeforeunload = function() {
+            if (isReading) {
+                return "Kelime okuma devam ediyor. Çıkmak istediğinizden emin misiniz?";
+            }
+        };
+
+        // Electron için gerekli kodlar
+        const { app, BrowserWindow } = require('electron');
+
+        function createWindow() {
+            const win = new BrowserWindow({
+                width: 800,
+                height: 600,
+                webPreferences: {
+                    nodeIntegration: true
+                }
+            });
+
+            win.loadFile('index.html');
+        }
+
+        app.whenReady().then(createWindow);
+
+        app.on('window-all-closed', () => {
+            if (process.platform !== 'darwin') {
+                app.quit();
+            }
+        });
+
+        app.on('activate', () => {
+            if (BrowserWindow.getAllWindows().length === 0) {
+                createWindow();
+            }
+        });
+    </script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker kaydı başarılı:', registration.scope);
+                })
+                .catch(function(err) {
+                    console.log('ServiceWorker kaydı başarısız:', err);
+                });
+        });
+    }
+</script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker kayıt başarılı');
+                })
+                .catch(function(error) {
+                    console.log('ServiceWorker kayıt hatası: ', error);
+                });
+        });
+    }
+</script>
+</body>
+</html>
+
